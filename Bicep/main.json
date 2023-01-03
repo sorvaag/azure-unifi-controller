@@ -1,0 +1,581 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.13.1.58284",
+      "templateHash": "7034316785992141386"
+    }
+  },
+  "parameters": {
+    "controllerName": {
+      "type": "string",
+      "defaultValue": "unifi-controller",
+      "metadata": {
+        "description": "Enter the name of the deployment to be used. Defaults to unifi-controller."
+      },
+      "maxLength": 20,
+      "minLength": 3
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "westus3",
+      "metadata": {
+        "description": "Enter the name of the Azure Region to be used. Defaults to West US 3."
+      }
+    },
+    "controllerUsername": {
+      "type": "string",
+      "defaultValue": "ubuntu",
+      "metadata": {
+        "description": "The username for the Unifi Controller VM. The default is ubuntu"
+      }
+    },
+    "sslExpiryNotificationEmail": {
+      "type": "string",
+      "metadata": {
+        "description": "The email address to send certificate expiry notifications to"
+      }
+    },
+    "controllerVmSize": {
+      "type": "string",
+      "defaultValue": "Standard_B1ms",
+      "metadata": {
+        "description": "The size / SKU of the Unifi Controller VM. The default is Standard B1ms"
+      }
+    },
+    "vNetAddressSpace": {
+      "type": "string",
+      "defaultValue": "172.16.0.0/24",
+      "metadata": {
+        "description": "Enter the address space to be used for the vNet. Defaults to 172.16.0.0/24."
+      }
+    },
+    "subnetAddressSpace": {
+      "type": "string",
+      "defaultValue": "172.16.0.0/28",
+      "metadata": {
+        "description": "Enter the address space to be used for the Subnet. Defaults to 172.16.0.0/28."
+      }
+    },
+    "environmentName": {
+      "type": "string",
+      "defaultValue": "prod",
+      "metadata": {
+        "description": "Enter the name of the deployment environment. Defaults to prod."
+      }
+    },
+    "restrictedSourceIPaddress": {
+      "type": "string",
+      "defaultValue": "*",
+      "metadata": {
+        "description": "Enter your source IPv4 address here if you you would like to lock down access to the Unifi controller. Default is allow all using *."
+      }
+    },
+    "sshPublicKey": {
+      "type": "string",
+      "metadata": {
+        "description": "Enter the SSH Public Key used to secure and access the Linux controller VM"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2021-01-01",
+      "name": "[format('rg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))]",
+      "location": "[parameters('location')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-10-01",
+      "name": "network-deployment",
+      "resourceGroup": "[format('rg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "controllerName": {
+            "value": "[parameters('controllerName')]"
+          },
+          "environmentName": {
+            "value": "[parameters('environmentName')]"
+          },
+          "location": {
+            "value": "[reference(subscriptionResourceId('Microsoft.Resources/resourceGroups', format('rg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))), '2021-01-01', 'full').location]"
+          },
+          "vNetAddressSpace": {
+            "value": "[parameters('vNetAddressSpace')]"
+          },
+          "subnetAddressSpace": {
+            "value": "[parameters('subnetAddressSpace')]"
+          },
+          "restrictedSourceIPaddress": {
+            "value": "[parameters('restrictedSourceIPaddress')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.13.1.58284",
+              "templateHash": "14501871902542005996"
+            }
+          },
+          "parameters": {
+            "controllerName": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "environmentName": {
+              "type": "string"
+            },
+            "vNetAddressSpace": {
+              "type": "string"
+            },
+            "subnetAddressSpace": {
+              "type": "string"
+            },
+            "restrictedSourceIPaddress": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/applicationSecurityGroups",
+              "apiVersion": "2022-07-01",
+              "name": "[format('asg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))]",
+              "location": "[parameters('location')]"
+            },
+            {
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2022-07-01",
+              "name": "[format('nsg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "unifi-allow-ssh-admin",
+                    "properties": {
+                      "description": "Allow SSH to manage the Unifi controller",
+                      "priority": 100,
+                      "direction": "Inbound",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "[parameters('restrictedSourceIPaddress')]",
+                      "sourcePortRange": "*",
+                      "destinationApplicationSecurityGroups": [
+                        {
+                          "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', format('asg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+                        }
+                      ],
+                      "destinationPortRange": "22",
+                      "access": "Allow"
+                    }
+                  },
+                  {
+                    "name": "unifi-allow-http",
+                    "properties": {
+                      "description": "Used to validate the SSL certificate",
+                      "priority": 110,
+                      "direction": "Inbound",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "*",
+                      "sourcePortRange": "*",
+                      "destinationApplicationSecurityGroups": [
+                        {
+                          "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', format('asg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+                        }
+                      ],
+                      "destinationPortRange": "80",
+                      "access": "Allow"
+                    }
+                  },
+                  {
+                    "name": "unifi-allow-stun",
+                    "properties": {
+                      "description": "Used for STUN traffic to the Unifi controller",
+                      "priority": 120,
+                      "direction": "Inbound",
+                      "protocol": "Udp",
+                      "sourceAddressPrefix": "[parameters('restrictedSourceIPaddress')]",
+                      "sourcePortRange": "*",
+                      "destinationApplicationSecurityGroups": [
+                        {
+                          "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', format('asg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+                        }
+                      ],
+                      "destinationPortRange": "3478",
+                      "access": "Allow"
+                    }
+                  },
+                  {
+                    "name": "unifi-allow-mobile-speed-test",
+                    "properties": {
+                      "description": "Used to publish the Mobile Speed Test",
+                      "priority": 130,
+                      "direction": "Inbound",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "[parameters('restrictedSourceIPaddress')]",
+                      "sourcePortRange": "*",
+                      "destinationApplicationSecurityGroups": [
+                        {
+                          "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', format('asg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+                        }
+                      ],
+                      "destinationPortRange": "6789",
+                      "access": "Allow"
+                    }
+                  },
+                  {
+                    "name": "unifi-allow-device-communication",
+                    "properties": {
+                      "description": "Used for Unifi device and controller communication",
+                      "priority": 140,
+                      "direction": "Inbound",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "[parameters('restrictedSourceIPaddress')]",
+                      "sourcePortRange": "*",
+                      "destinationApplicationSecurityGroups": [
+                        {
+                          "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', format('asg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+                        }
+                      ],
+                      "destinationPortRange": "8080",
+                      "access": "Allow"
+                    }
+                  },
+                  {
+                    "name": "unifi-allow-web-console",
+                    "properties": {
+                      "description": "Used for Unifi controller GUI/API as seen in a web browser.",
+                      "priority": 150,
+                      "direction": "Inbound",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "[parameters('restrictedSourceIPaddress')]",
+                      "sourcePortRange": "*",
+                      "destinationApplicationSecurityGroups": [
+                        {
+                          "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', format('asg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+                        }
+                      ],
+                      "destinationPortRange": "8443",
+                      "access": "Allow"
+                    }
+                  },
+                  {
+                    "name": "unifi-allow-https-redirection",
+                    "properties": {
+                      "description": "Used for Unifi HTTPS portal redirection",
+                      "priority": 160,
+                      "direction": "Inbound",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "[parameters('restrictedSourceIPaddress')]",
+                      "sourcePortRange": "*",
+                      "destinationApplicationSecurityGroups": [
+                        {
+                          "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', format('asg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+                        }
+                      ],
+                      "destinationPortRange": "8843",
+                      "access": "Allow"
+                    }
+                  },
+                  {
+                    "name": "unifi-deny-all",
+                    "properties": {
+                      "description": "Used to deny any additional inbound traffic",
+                      "priority": 200,
+                      "sourceAddressPrefix": "*",
+                      "sourcePortRange": "*",
+                      "destinationAddressPrefix": "*",
+                      "destinationPortRange": "*",
+                      "direction": "Inbound",
+                      "protocol": "*",
+                      "access": "Deny"
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/applicationSecurityGroups', format('asg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2022-07-01",
+              "name": "[format('vnet-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "[parameters('vNetAddressSpace')]"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "[format('snet-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))]",
+                    "properties": {
+                      "addressPrefix": "[parameters('subnetAddressSpace')]",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('nsg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+                      }
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', format('nsg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "asgId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/applicationSecurityGroups', format('asg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+            },
+            "nsgId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/networkSecurityGroups', format('nsg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+            },
+            "subnetId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', format('vnet-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')), format('snet-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('rg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-10-01",
+      "name": "compute-deployment",
+      "resourceGroup": "[format('rg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "controllerName": {
+            "value": "[parameters('controllerName')]"
+          },
+          "controllerUsername": {
+            "value": "[parameters('controllerUsername')]"
+          },
+          "environmentName": {
+            "value": "[parameters('environmentName')]"
+          },
+          "dnsPrefix": {
+            "value": "[uniqueString(subscriptionResourceId('Microsoft.Resources/resourceGroups', format('rg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))))]"
+          },
+          "location": {
+            "value": "[reference(subscriptionResourceId('Microsoft.Resources/resourceGroups', format('rg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))), '2021-01-01', 'full').location]"
+          },
+          "subnetId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))), 'Microsoft.Resources/deployments', 'network-deployment'), '2020-10-01').outputs.subnetId.value]"
+          },
+          "nsgId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))), 'Microsoft.Resources/deployments', 'network-deployment'), '2020-10-01').outputs.nsgId.value]"
+          },
+          "asgId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))), 'Microsoft.Resources/deployments', 'network-deployment'), '2020-10-01').outputs.asgId.value]"
+          },
+          "vmSize": {
+            "value": "[parameters('controllerVmSize')]"
+          },
+          "sshPublicKey": {
+            "value": "[parameters('sshPublicKey')]"
+          },
+          "sslExpiryNotificationEmail": {
+            "value": "[parameters('sslExpiryNotificationEmail')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.13.1.58284",
+              "templateHash": "2184750491116648333"
+            }
+          },
+          "parameters": {
+            "controllerName": {
+              "type": "string"
+            },
+            "controllerUsername": {
+              "type": "string"
+            },
+            "environmentName": {
+              "type": "string"
+            },
+            "sshPublicKey": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "dnsPrefix": {
+              "type": "string"
+            },
+            "vmSize": {
+              "type": "string"
+            },
+            "subnetId": {
+              "type": "string"
+            },
+            "nsgId": {
+              "type": "string"
+            },
+            "asgId": {
+              "type": "string"
+            },
+            "sslExpiryNotificationEmail": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/publicIPAddresses",
+              "apiVersion": "2022-07-01",
+              "name": "[format('pip-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard"
+              },
+              "properties": {
+                "publicIPAllocationMethod": "Static",
+                "deleteOption": "Delete",
+                "publicIPAddressVersion": "IPv4",
+                "dnsSettings": {
+                  "domainNameLabel": "[parameters('dnsPrefix')]"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Network/networkInterfaces",
+              "apiVersion": "2022-07-01",
+              "name": "[format('nic-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "ipConfigurations": [
+                  {
+                    "name": "[format('ip-config-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))]",
+                    "properties": {
+                      "applicationSecurityGroups": [
+                        {
+                          "id": "[parameters('asgId')]"
+                        }
+                      ],
+                      "subnet": {
+                        "id": "[parameters('subnetId')]"
+                      },
+                      "privateIPAllocationMethod": "Dynamic",
+                      "publicIPAddress": {
+                        "id": "[resourceId('Microsoft.Network/publicIPAddresses', format('pip-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+                      }
+                    }
+                  }
+                ],
+                "networkSecurityGroup": {
+                  "id": "[parameters('nsgId')]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/publicIPAddresses', format('pip-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Compute/virtualMachines",
+              "apiVersion": "2022-08-01",
+              "name": "[format('vm-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "hardwareProfile": {
+                  "vmSize": "[parameters('vmSize')]"
+                },
+                "storageProfile": {
+                  "osDisk": {
+                    "createOption": "fromImage",
+                    "name": "[format('osd-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))]",
+                    "managedDisk": {
+                      "storageAccountType": "StandardSSD_LRS"
+                    },
+                    "diskSizeGB": 30
+                  },
+                  "imageReference": {
+                    "publisher": "canonical",
+                    "offer": "0001-com-ubuntu-server-jammy",
+                    "sku": "22_04-lts-gen2",
+                    "version": "latest"
+                  }
+                },
+                "networkProfile": {
+                  "networkInterfaces": [
+                    {
+                      "id": "[resourceId('Microsoft.Network/networkInterfaces', format('nic-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]",
+                      "properties": {
+                        "primary": true,
+                        "deleteOption": "Delete"
+                      }
+                    }
+                  ]
+                },
+                "osProfile": {
+                  "computerName": "[format('vm{0}{1}{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))]",
+                  "adminUsername": "[parameters('controllerUsername')]",
+                  "customData": "[base64(format('#cloud-config\r\npackages_update: true\r\npackages_upgrade: true\r\npackages:\r\n  - ca-certificates\r\n  - wget\r\nruncmd:\r\n  - rm unifi-latest.sh &> /dev/null; wget https://get.glennr.nl/unifi/install/install_latest/unifi-latest.sh && bash unifi-latest.sh --skip --fqdn {0} --server-ip {1} --email {2}\r\n  - rm unifi-easy-encrypt.sh &> /dev/null; wget https://get.glennr.nl/unifi/extra/unifi-easy-encrypt.sh && bash unifi-easy-encrypt.sh --skip --fqdn {0} --server-ip {1} --email {2}\r\n', reference(resourceId('Microsoft.Network/publicIPAddresses', format('pip-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))), '2022-07-01').dnsSettings.fqdn, reference(resourceId('Microsoft.Network/publicIPAddresses', format('pip-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))), '2022-07-01').ipAddress, parameters('sslExpiryNotificationEmail')))]",
+                  "linuxConfiguration": {
+                    "disablePasswordAuthentication": true,
+                    "ssh": {
+                      "publicKeys": [
+                        {
+                          "path": "[format('/home/{0}/.ssh/authorized_keys', parameters('controllerUsername'))]",
+                          "keyData": "[parameters('sshPublicKey')]"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "diagnosticsProfile": {
+                  "bootDiagnostics": {
+                    "enabled": true
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', format('nic-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]",
+                "[resourceId('Microsoft.Network/publicIPAddresses', format('pip-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "dnsHostName": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', format('pip-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))), '2022-07-01').dnsSettings.fqdn]"
+            },
+            "publicIpAddress": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', format('pip-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))), '2022-07-01').ipAddress]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location'))), 'Microsoft.Resources/deployments', 'network-deployment')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('rg-{0}-{1}-{2}', parameters('controllerName'), parameters('environmentName'), parameters('location')))]"
+      ]
+    }
+  ]
+}
